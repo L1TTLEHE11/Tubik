@@ -104,25 +104,34 @@ fun HomeScreen(isTv: Boolean, refresh: Int, onNeedLogin: () -> Unit) {
 }
 
 @Composable
+private fun NeedLogin(title: String, onNeedLogin: () -> Unit) {
+    Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(title, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
+        Text("Войди в аккаунт в настройках, и тут всё появится.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = onNeedLogin) { Text("В настройки") }
+    }
+}
+
+@Composable
 fun SubscriptionsScreen(isTv: Boolean, refresh: Int, onNeedLogin: () -> Unit) {
     val cookies by prefs.cookiesFlow.collectAsState()
-    if (cookies.isNullOrBlank()) {
-        Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Подписки живут в аккаунте", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            Text("Войди через Google в настройках, и тут появится твоя лента.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(16.dp))
-            Button(onClick = onNeedLogin) { Text("В настройки") }
-        }
-        return
-    }
-    var section by rememberSaveable { mutableStateOf("subs") }
-    val feed = rememberFeed(section to refresh) { if (section == "subs") repo.subscriptions() else repo.history() }
+    if (cookies.isNullOrBlank()) { NeedLogin("Подписки живут в аккаунте", onNeedLogin); return }
+    val feed = rememberFeed("subs" to refresh) { repo.subscriptions() }
+    VideoGrid(feed, isTv, onNeedLogin = onNeedLogin)
+}
+
+@Composable
+fun HistoryScreen(isTv: Boolean, refresh: Int, onNeedLogin: () -> Unit) {
+    val cookies by prefs.cookiesFlow.collectAsState()
+    if (cookies.isNullOrBlank()) { NeedLogin("История живёт в аккаунте", onNeedLogin); return }
+    val feed = rememberFeed("history" to refresh) { repo.history() }
     VideoGrid(feed, isTv, onNeedLogin = onNeedLogin, header = {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Chip("Новое на каналах", section == "subs") { section = "subs" }
-            Chip("История", section == "history") { section = "history" }
-        }
+        Text(
+            "Что ты смотрел — из истории YouTube. Видео из Тюбика попадают сюда тоже (если не появилось сразу — обнови).",
+            fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     })
 }
 

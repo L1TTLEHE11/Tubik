@@ -33,6 +33,7 @@ import dev.tubik.app.data.InnerTube
 import dev.tubik.app.data.Repository
 import dev.tubik.app.data.Repository.Companion.toVideos
 import dev.tubik.app.data.VideoItem
+import dev.tubik.app.data.WatchTracker
 import dev.tubik.app.ui.Nav
 import dev.tubik.app.data.SbCategories
 import dev.tubik.app.data.Segment
@@ -59,6 +60,14 @@ class PlayerActivity : ComponentActivity() {
     private var tickJob: Job? = null
     private var loadJob: Job? = null
     private val watched = mutableSetOf<String>()
+    /** Отметки просмотра в историю YouTube (только когда вошёл в аккаунт). */
+    private var tracker: WatchTracker? = null
+    private var tickCount = 0
+
+    private fun track(block: WatchTracker.() -> Unit) {
+        val t = tracker ?: return
+        app.bgScope.launch { t.block() }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,7 +87,17 @@ class PlayerActivity : ComponentActivity() {
         }
         player = ExoPlayer.Builder(this).setTrackSelector(trackSelector).build()
         player.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) { ui.isPlaying.value = isPlaying }
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                ui.isPlaying.value = isPlaying
+                if (!isPlaying) { val pos = player.currentPosition / 1000.0; track { flush(pos) } }
+            }
+            override fun onPositionDiscontinuity(old: Player.PositionInfo, new: Player.PositionInfo, reason: Int) {
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                    val from = old.positionMs / 1000.0
+                    val to = new.positionMs / 1000.0
+                    track { onSeek(from, to) }
+                }
+            }
             override fun onPlaybackStateChanged(state: Int) {
                 ui.buffering.value = state == Player.STATE_BUFFERING
                 ui.ended.value = state == Player.STATE_ENDED
@@ -121,6 +140,9 @@ class PlayerActivity : ComponentActivity() {
 
     /** Переключиться на другое видео, не выходя из плеера. */
     private fun playVideo(id: String) {
+        val pos = player.currentPosition / 1000.0
+        track { flush(pos) }
+        tracker = null
         loadJob?.cancel()
         tickJob?.cancel()
         player.stop()
@@ -142,6 +164,11 @@ class PlayerActivity : ComponentActivity() {
                 }
                 val info = app.repo.stream(id)
                 ui.title.value = info.name
+                if (app.repo.isLoggedIn) {
+                    val t = WatchTracker(app.innerTube, id)
+                    tracker = t
+                    app.bgScope.launch { t.prepare() }
+                }
                 ui.channel.value = info.uploaderName.orEmpty()
                 ui.channelUrl.value = info.uploaderUrl.orEmpty()
                 val related = info.relatedItems.toVideos()
@@ -195,6 +222,11 @@ class PlayerActivity : ComponentActivity() {
                 val pos = player.currentPosition
                 ui.positionMs.value = pos
                 ui.bufferedMs.value = player.bufferedPosition
+                // раз в секунду — отметки просмотра
+                if (++tickCount % 4 == 0 && player.isPlaying) {
+                    val sec = pos / 1000.0
+                    track { onPlaying(sec); tick(sec, true) }
+                }
                 if (player.duration > 0) ui.durationMs.value = player.duration
                 val seg = segments.firstOrNull { pos >= it.startMs && pos < it.endMs - 300 }
                 if (seg != null && seg !in skipped && player.isPlaying) {
@@ -227,6 +259,8 @@ class PlayerActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         player.pause()
+        val pos = player.currentPosition / 1000.0
+        track { flush(pos) }
     }
 
     override fun onDestroy() {

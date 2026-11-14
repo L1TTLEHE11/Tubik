@@ -42,6 +42,7 @@ import dev.tubik.app.player.PlayerActivity
 enum class Tab(val title: String, val icon: ImageVector) {
     HOME("Главная", Icons.Filled.Home),
     SUBS("Подписки", Icons.AutoMirrored.Filled.List),
+    HISTORY("История", HistoryIcon),
     SEARCH("Поиск", Icons.Filled.Search),
     SETTINGS("Настройки", Icons.Filled.Settings),
 }
@@ -97,6 +98,7 @@ fun MainScreen(isTv: Boolean) {
             } else when (tab) {
                 Tab.HOME -> HomeScreen(isTv, refresh, onNeedLogin = { selectTab(Tab.SETTINGS) })
                 Tab.SUBS -> SubscriptionsScreen(isTv, refresh, onNeedLogin = { selectTab(Tab.SETTINGS) })
+                Tab.HISTORY -> HistoryScreen(isTv, refresh, onNeedLogin = { selectTab(Tab.SETTINGS) })
                 Tab.SEARCH -> SearchScreen(isTv)
                 Tab.SETTINGS -> SettingsScreen(isTv)
             }
@@ -207,7 +209,7 @@ private fun TvRail(selected: Tab, onSelect: (Tab) -> Unit) {
                     }
                 }
             }
-            if (expanded && (selected == Tab.HOME || selected == Tab.SUBS)) {
+            if (expanded && (selected == Tab.HOME || selected == Tab.SUBS || selected == Tab.HISTORY)) {
                 Spacer(Modifier.height(10.dp))
                 Text(
                     "ОК на вкладке — обновить ленту", fontSize = 12.sp, maxLines = 2,

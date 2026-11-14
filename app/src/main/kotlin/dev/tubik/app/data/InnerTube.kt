@@ -171,6 +171,21 @@ class InnerTube(
         return parseFeed(post("search", body, requireAuth = false))
     }
 
+    /** GET с куками и авторизацией — для отметок просмотра (s.youtube.com/api/stats/…). */
+    fun authedGet(url: String): Int {
+        val cookies = cookieProvider() ?: throw NotLoggedInException()
+        val rb = Request.Builder().url(url).get()
+            .header("User-Agent", USER_AGENT)
+            .header("Origin", origin)
+            .header("Referer", "$origin/")
+            .header("Cookie", cookies)
+        authHeader(cookies)?.let { rb.header("Authorization", it).header("X-Goog-AuthUser", "0") }
+        http.newCall(rb.build()).execute().use { r ->
+            mergeSetCookies(cookies, r.headers("Set-Cookie"))
+            return r.code
+        }
+    }
+
     /**
      * Подписан ли пользователь на канал. Смотрим по порядку:
      * subscriptionStateEntity (новый формат), subscribeButtonRenderer (старый),

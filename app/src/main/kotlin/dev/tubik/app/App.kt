@@ -25,6 +25,9 @@ class App : Application(), SingletonImageLoader.Factory {
     lateinit var prefs: Prefs
     lateinit var repo: Repository
     lateinit var sponsorBlock: SponsorBlock
+    lateinit var innerTube: InnerTube
+    /** Фоновые задачи, которые должны пережить закрытие экрана (отметки просмотра). */
+    val bgScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
@@ -39,7 +42,7 @@ class App : Application(), SingletonImageLoader.Factory {
         val country = Locale.getDefault().country.ifBlank { "RU" }
         NewPipe.init(NpDownloader(http), Localization(lang, country), ContentCountry(country))
 
-        val innerTube = InnerTube(
+        innerTube = InnerTube(
             http,
             cookieProvider = { prefs.cookies },
             onCookiesUpdated = { if (!prefs.cookies.isNullOrBlank()) prefs.cookies = it },
