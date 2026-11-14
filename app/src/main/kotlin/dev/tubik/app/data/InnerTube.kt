@@ -171,6 +171,49 @@ class InnerTube(
         return parseFeed(post("search", body, requireAuth = false))
     }
 
+    /**
+     * Подписан ли пользователь на канал. Смотрим по порядку:
+     * subscriptionStateEntity (новый формат), subscribeButtonRenderer (старый),
+     * а если YouTube не сказал — ищем канал в списке подписок (FEchannels).
+     * null — не удалось понять.
+     */
+    fun isSubscribed(channelId: String): Boolean? {
+        val json = post("browse", JsonObject().apply { put("browseId", channelId) }, requireAuth = true)
+        findSubscribed(json, channelId)?.let { return it }
+        return runCatching { subscribedChannelIds().contains(channelId) }.getOrNull()
+    }
+
+    /** Все каналы из списка подписок (до ~10 страниц). */
+    fun subscribedChannelIds(): Set<String> {
+        val ids = HashSet<String>()
+        var body = JsonObject().apply { put("browseId", "FEchannels") }
+        repeat(10) {
+            val json = post("browse", body, requireAuth = true)
+            var cont: String? = null
+            fun walk(n: Any?) {
+                when (n) {
+                    is JsonObject -> {
+                        for (key in listOf("channelRenderer", "gridChannelRenderer")) {
+                            n.getObject(key)?.getString("channelId")?.let { ids += it }
+                        }
+                        n.getObject("continuationCommand")?.getString("token")?.let { if (cont == null) cont = it }
+                        n.values.forEach { walk(it) }
+                    }
+                    is JsonArray -> n.forEach { walk(it) }
+                }
+            }
+            walk(json)
+            val c = cont ?: return ids
+            body = JsonObject().apply { put("continuation", c) }
+        }
+        return ids
+    }
+
+    fun setSubscribed(channelId: String, subscribe: Boolean) {
+        val body = JsonObject().apply { put("channelIds", JsonArray().apply { add(channelId) }) }
+        post(if (subscribe) "subscription/subscribe" else "subscription/unsubscribe", body, requireAuth = true)
+    }
+
     fun home(continuation: String? = null) = browse("FEwhat_to_watch", continuation)
     fun subscriptions(continuation: String? = null) = browse("FEsubscriptions", continuation)
     fun history(continuation: String? = null) = browse("FEhistory", continuation)
@@ -260,6 +303,30 @@ class InnerTube(
                 return null
             }
             return walk(node).orEmpty()
+        }
+
+        fun findSubscribed(json: JsonObject, channelId: String): Boolean? {
+            var entity: Boolean? = null
+            var renderer: Boolean? = null
+            var viewModel: Boolean? = null
+            fun walk(n: Any?, inVm: Boolean) {
+                when (n) {
+                    is JsonObject -> {
+                        n.getObject("subscriptionStateEntity")?.let { e ->
+                            if (entity == null && e.has("subscribed")) entity = e.getBoolean("subscribed")
+                        }
+                        n.getObject("subscribeButtonRenderer")?.let { r ->
+                            val forThis = r.getArray("channelIds")?.contains(channelId) ?: true
+                            if (renderer == null && forThis && r.has("subscribed")) renderer = r.getBoolean("subscribed")
+                        }
+                        if (inVm && viewModel == null && n.get("subscribed") is Boolean) viewModel = n.getBoolean("subscribed")
+                        for ((k, v) in n) walk(v, inVm || k == "subscribeButtonViewModel")
+                    }
+                    is JsonArray -> n.forEach { walk(it, inVm) }
+                }
+            }
+            walk(json, false)
+            return entity ?: renderer ?: viewModel
         }
 
         private fun findFirst(node: Any?, key: String): Any? {

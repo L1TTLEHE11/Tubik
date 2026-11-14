@@ -1,6 +1,10 @@
 package dev.tubik.app.data
 
 import android.content.Context
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -64,6 +68,41 @@ class Prefs(context: Context) {
     var skippedVersion: Long
         get() = sp.getLong("skipped_version", 0)
         set(v) = sp.edit().putLong("skipped_version", v).apply()
+
+    // --- Масштаб: обычное состояние Compose, чтобы интерфейс перерисовывался сразу ---
+    private var _uiScale by mutableFloatStateOf(sp.getFloat("ui_scale", 1f))
+    private var _textScale by mutableFloatStateOf(sp.getFloat("text_scale", 1f))
+
+    /** Размер элементов интерфейса (карточки, отступы, кнопки), 1f = как задумано. */
+    var uiScale: Float
+        get() = _uiScale
+        set(v) { _uiScale = v; sp.edit().putFloat("ui_scale", v).apply() }
+
+    /** Размер текста поверх системного. */
+    var textScale: Float
+        get() = _textScale
+        set(v) { _textScale = v; sp.edit().putFloat("text_scale", v).apply() }
+
+    // --- История поиска: свежие сверху, без повторов ---
+    private var _history by mutableStateOf(
+        sp.getString("search_history", "").orEmpty().split('\n').filter { it.isNotBlank() }
+    )
+    val searchHistory: List<String> get() = _history
+
+    fun addSearch(q: String) {
+        val query = q.trim().replace('\n', ' ')
+        if (query.isEmpty()) return
+        saveHistory((listOf(query) + _history.filterNot { it.equals(query, ignoreCase = true) }).take(100))
+    }
+
+    fun removeSearch(q: String) = saveHistory(_history - q)
+
+    fun clearSearchHistory() = saveHistory(emptyList())
+
+    private fun saveHistory(list: List<String>) {
+        _history = list
+        sp.edit().putString("search_history", list.joinToString("\n")).apply()
+    }
 
     companion object {
         private const val KEY_COOKIES = "yt_cookies"

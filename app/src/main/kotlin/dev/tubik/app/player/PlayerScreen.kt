@@ -107,6 +107,7 @@ fun PlayerScreen(
     }
 
     val presentation = rememberPresentationState(player)
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
 
     Box(
         Modifier
@@ -133,6 +134,13 @@ fun PlayerScreen(
                         } else { lastInteraction = System.currentTimeMillis(); false }
                     }
                 }
+            }
+            // «Вверх», когда выше уже некуда, — спрятать управление
+            .onKeyEvent { ev ->
+                if (ev.type == KeyEventType.KeyDown && ev.key == Key.DirectionUp && controlsVisible && dialog == null && !state.ended.value) {
+                    if (!focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Up)) controlsVisible = false
+                    true
+                } else false
             }
             .focusable()
             .pointerInput(Unit) {
@@ -195,7 +203,12 @@ fun PlayerScreen(
                         .padding(horizontal = 24.dp, vertical = 16.dp),
                 ) {
                     if (!state.isLive.value) {
-                        SeekBar(state, isTv, onSeek = { player.seekTo(it); state.positionMs.value = it; poke() }, onStep = { seekBy(it); poke() })
+                        SeekBar(
+                            state, isTv,
+                            onSeek = { player.seekTo(it); state.positionMs.value = it; poke() },
+                            onStep = { seekBy(it); poke() },
+                            onUp = { controlsVisible = false },
+                        )
                         Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
                             Text(fmt(state.positionMs.value), color = Color.White, fontSize = 13.sp)
                             Spacer(Modifier.weight(1f))
@@ -247,7 +260,7 @@ fun PlayerScreen(
 }
 
 @Composable
-private fun SeekBar(state: PlayerUiState, isTv: Boolean, onSeek: (Long) -> Unit, onStep: (Long) -> Unit) {
+private fun SeekBar(state: PlayerUiState, isTv: Boolean, onSeek: (Long) -> Unit, onStep: (Long) -> Unit, onUp: () -> Unit) {
     val dur = state.durationMs.value.coerceAtLeast(1)
     val pos = state.positionMs.value
     val src = remember { MutableInteractionSource() }
@@ -262,6 +275,7 @@ private fun SeekBar(state: PlayerUiState, isTv: Boolean, onSeek: (Long) -> Unit,
                 when (ev.key) {
                     Key.DirectionLeft -> { onStep(-10_000); true }
                     Key.DirectionRight -> { onStep(10_000); true }
+                    Key.DirectionUp -> { onUp(); true }
                     else -> false
                 }
             }

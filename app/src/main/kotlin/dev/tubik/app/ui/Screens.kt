@@ -9,12 +9,16 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -65,14 +69,14 @@ fun Chip(text: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-fun HomeScreen(isTv: Boolean, onNeedLogin: () -> Unit) {
+fun HomeScreen(isTv: Boolean, refresh: Int, onNeedLogin: () -> Unit) {
     val cookies by prefs.cookiesFlow.collectAsState()
     val loggedIn = !cookies.isNullOrBlank()
     val sections = remember(loggedIn) {
         (if (loggedIn) listOf("__home" to "Для тебя") else emptyList()) + repo.kiosks.toList()
     }
     var section by rememberSaveable(loggedIn) { mutableStateOf(sections.first().first) }
-    val feed = rememberFeed(section to loggedIn) {
+    val feed = rememberFeed(Triple(section, loggedIn, refresh)) {
         if (section == "__home") repo.home() else repo.kiosk(section)
     }
     VideoGrid(
@@ -100,7 +104,7 @@ fun HomeScreen(isTv: Boolean, onNeedLogin: () -> Unit) {
 }
 
 @Composable
-fun SubscriptionsScreen(isTv: Boolean, onNeedLogin: () -> Unit) {
+fun SubscriptionsScreen(isTv: Boolean, refresh: Int, onNeedLogin: () -> Unit) {
     val cookies by prefs.cookiesFlow.collectAsState()
     if (cookies.isNullOrBlank()) {
         Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -113,7 +117,7 @@ fun SubscriptionsScreen(isTv: Boolean, onNeedLogin: () -> Unit) {
         return
     }
     var section by rememberSaveable { mutableStateOf("subs") }
-    val feed = rememberFeed(section) { if (section == "subs") repo.subscriptions() else repo.history() }
+    val feed = rememberFeed(section to refresh) { if (section == "subs") repo.subscriptions() else repo.history() }
     VideoGrid(feed, isTv, onNeedLogin = onNeedLogin, header = {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Chip("Новое на каналах", section == "subs") { section = "subs" }
@@ -126,31 +130,161 @@ fun SubscriptionsScreen(isTv: Boolean, onNeedLogin: () -> Unit) {
 fun SearchScreen(isTv: Boolean) {
     var text by rememberSaveable { mutableStateOf("") }
     var query by rememberSaveable { mutableStateOf("") }
+    // true — показываем историю и подсказки, false — результаты
+    var editing by rememberSaveable { mutableStateOf(true) }
+    var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     val kb = LocalSoftwareKeyboardController.current
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    val fieldFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val pad = if (isTv) 28.dp else 12.dp
+
+    fun submit(q: String) {
+        val t = q.trim()
+        if (t.isEmpty()) return
+        text = t
+        query = t
+        prefs.addSearch(t)
+        editing = false
+        kb?.hide()
+    }
+
+    // Подсказки YouTube с небольшой задержкой, чтобы не дёргать сеть на каждую букву
+    LaunchedEffect(text) {
+        if (text.isBlank()) { suggestions = emptyList(); return@LaunchedEffect }
+        kotlinx.coroutines.delay(250)
+        suggestions = repo.suggestions(text)
+    }
+    // После поиска уводим фокус из поля в результаты (на ТВ)
+    LaunchedEffect(query, editing) {
+        if (!editing && query.isNotBlank() && isTv) {
+            kotlinx.coroutines.delay(600)
+            focus.moveFocus(androidx.compose.ui.focus.FocusDirection.Down)
+        }
+    }
+
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = if (isTv) 28.dp else 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = pad, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = text,
-                onValueChange = { text = it },
-                modifier = Modifier.weight(1f),
+                onValueChange = { text = it; editing = true },
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(fieldFocus)
+                    .onFocusChanged { if (it.isFocused) editing = true },
                 singleLine = true,
                 placeholder = { Text("Что ищем?") },
                 leadingIcon = { Icon(Icons.Filled.Search, null) },
+                trailingIcon = {
+                    if (text.isNotEmpty()) IconButton(onClick = { text = ""; editing = true }) { Icon(Icons.Filled.Clear, "Стереть") }
+                },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { query = text.trim(); kb?.hide() }),
+                keyboardActions = KeyboardActions(onSearch = { submit(text) }),
             )
             Spacer(Modifier.width(12.dp))
-            Button(onClick = { query = text.trim(); kb?.hide() }) { Text("Найти") }
+            Button(onClick = { submit(text) }) { Text("Найти") }
         }
-        if (query.isNotBlank()) {
+
+        if (editing || query.isBlank()) {
+            SearchSuggestions(
+                text = text,
+                suggestions = suggestions,
+                isTv = isTv,
+                pad = pad,
+                onPick = { submit(it) },
+                onFill = { text = it; runCatching { fieldFocus.requestFocus() } },
+            )
+        } else {
             val feed = rememberFeed(query) { repo.search(query) }
             VideoGrid(feed, isTv)
-        } else {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Без рекламы. Ну почти: спонсорские вставки режет SponsorBlock.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
         }
     }
+}
+
+@Composable
+private fun SearchSuggestions(
+    text: String,
+    suggestions: List<String>,
+    isTv: Boolean,
+    pad: androidx.compose.ui.unit.Dp,
+    onPick: (String) -> Unit,
+    onFill: (String) -> Unit,
+) {
+    val history = prefs.searchHistory
+    val t = text.trim()
+    val fromHistory = if (t.isEmpty()) history.take(20)
+        else history.filter { it.contains(t, ignoreCase = true) && !it.equals(t, ignoreCase = true) }.take(5)
+    val fromYt = suggestions.filter { s -> fromHistory.none { it.equals(s, ignoreCase = true) } }.take(10)
+
+    if (fromHistory.isEmpty() && fromYt.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                if (t.isEmpty()) "Тут будет история поиска. Пока пусто — ищи что-нибудь." else "Подсказок нет. Жми «Найти».",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        return
+    }
+    androidx.compose.foundation.lazy.LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = pad, vertical = 4.dp),
+    ) {
+        if (t.isEmpty() && fromHistory.isNotEmpty()) {
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Text("Ты искал", fontWeight = FontWeight.Bold, color = Accent, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { prefs.clearSearchHistory() }) { Text("Очистить историю") }
+                }
+            }
+        }
+        items(fromHistory.size, key = { "h" + fromHistory[it] }) { i ->
+            val q = fromHistory[i]
+            SuggestionRow(q, isHistory = true, isTv = isTv, onClick = { onPick(q) }, onFill = { onFill(q) }, onDelete = { prefs.removeSearch(q) })
+        }
+        items(fromYt.size, key = { "s" + fromYt[it] }) { i ->
+            val q = fromYt[i]
+            SuggestionRow(q, isHistory = false, isTv = isTv, onClick = { onPick(q) }, onFill = { onFill(q) }, onDelete = null)
+        }
+    }
+}
+
+@Composable
+private fun SuggestionRow(q: String, isHistory: Boolean, isTv: Boolean, onClick: () -> Unit, onFill: () -> Unit, onDelete: (() -> Unit)?) {
+    val src = remember { MutableInteractionSource() }
+    val focused by src.collectIsFocusedAsState()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (focused) Color.White else Color.Transparent)
+            .clickable(interactionSource = src, indication = null, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = if (isTv) 10.dp else 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val c = if (focused) Color.Black else MaterialTheme.colorScheme.onSurface
+        Text(if (isHistory) "🕘" else "🔍", fontSize = 15.sp)
+        Spacer(Modifier.width(14.dp))
+        Text(q, color = c, fontSize = 16.sp, maxLines = 1, modifier = Modifier.weight(1f))
+        // Подставить в поле, чтобы дописать (как стрелочка ↖ в YouTube)
+        SmallAction("↖", focusedParent = focused, onClick = onFill)
+        if (onDelete != null) SmallAction("✕", focusedParent = focused, onClick = onDelete)
+    }
+}
+
+@Composable
+private fun SmallAction(label: String, focusedParent: Boolean, onClick: () -> Unit) {
+    val src = remember { MutableInteractionSource() }
+    val focused by src.collectIsFocusedAsState()
+    Text(
+        label,
+        fontSize = 15.sp,
+        color = when { focused -> Color.White; focusedParent -> Color.Black; else -> MaterialTheme.colorScheme.onSurfaceVariant },
+        modifier = Modifier
+            .padding(start = 6.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (focused) Accent else Color.Transparent)
+            .clickable(interactionSource = src, indication = null, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    )
 }
 
 @Composable
@@ -206,8 +340,14 @@ fun SettingsScreen(isTv: Boolean) {
             Text("Подсказка: долгое нажатие на карточку открывает канал.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
+        Section("Масштаб")
+        Text("Размер интерфейса (карточки, кнопки, отступы)", fontSize = 14.sp)
+        ScaleChips(prefs.uiScale) { prefs.uiScale = it }
+        Text("Размер текста", fontSize = 14.sp)
+        ScaleChips(prefs.textScale) { prefs.textScale = it }
+
         Section("Качество по умолчанию")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
             listOf(0 to "Авто", 2160 to "4K", 1440 to "1440p", 1080 to "1080p", 720 to "720p", 480 to "480p").forEach { (v, t) ->
                 Chip(t, quality == v) { quality = v; prefs.maxQuality = v }
             }
@@ -242,6 +382,15 @@ fun SettingsScreen(isTv: Boolean) {
     if (showPaste) PasteCookiesDialog(onDismiss = { showPaste = false })
     if (showReceive) ReceiveLoginDialog(isTv, onDismiss = { showReceive = false })
     if (showSend) SendLoginDialog(onDismiss = { showSend = false })
+}
+
+@Composable
+private fun ScaleChips(value: Float, onPick: (Float) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+        listOf(0.75f, 0.85f, 1f, 1.15f, 1.3f, 1.5f).forEach { v ->
+            Chip("${(v * 100).toInt()}%", kotlin.math.abs(value - v) < 0.01f) { onPick(v) }
+        }
+    }
 }
 
 @Composable

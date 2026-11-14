@@ -15,6 +15,7 @@ import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler
 
 class ChannelPage(
     val url: String,
+    val id: String,
     val name: String,
     val avatar: String,
     val banner: String,
@@ -81,6 +82,7 @@ class Repository(
         }
         ChannelPage(
             url = url,
+            id = info.id,
             name = info.name,
             avatar = info.avatars.maxByOrNull { it.height }?.url.orEmpty(),
             banner = info.banners.maxByOrNull { it.width }?.url.orEmpty(),
@@ -102,6 +104,19 @@ class Repository(
             val p = ChannelTabInfo.getMoreItems(yt, tab, page)
             Paged(p.items.toVideos(), p.nextPage?.takeIf { Page.isValid(it) }?.let { channelTabNext(tab, it) })
         }
+    }
+
+    suspend fun isSubscribed(channelId: String): Boolean? = withContext(Dispatchers.IO) {
+        if (!isLoggedIn) null else runCatching { innerTube.isSubscribed(channelId) }.getOrNull()
+    }
+
+    suspend fun setSubscribed(channelId: String, subscribe: Boolean) = withContext(Dispatchers.IO) {
+        innerTube.setSubscribed(channelId, subscribe)
+    }
+
+    /** Подсказки автодополнения от YouTube. */
+    suspend fun suggestions(query: String): List<String> = withContext(Dispatchers.IO) {
+        if (query.isBlank()) emptyList() else runCatching { yt.suggestionExtractor.suggestionList(query) }.getOrDefault(emptyList())
     }
 
     suspend fun stream(videoId: String): StreamInfo = withContext(Dispatchers.IO) {

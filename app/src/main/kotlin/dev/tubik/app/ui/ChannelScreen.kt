@@ -20,6 +20,9 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import dev.tubik.app.App
 import dev.tubik.app.data.ChannelPage
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 
 @Composable
 fun ChannelScreen(url: String, isTv: Boolean) {
@@ -85,6 +88,8 @@ private fun ChannelContent(p: ChannelPage, isTv: Boolean) {
                     Text(p.name, fontSize = if (isTv) 28.sp else 22.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (p.subscribers.isNotBlank()) Text(p.subscribers, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
                 }
+                Spacer(Modifier.width(12.dp))
+                SubscribeButton(p)
             }
             if (p.description.isNotBlank()) {
                 Text(
@@ -98,4 +103,58 @@ private fun ChannelContent(p: ChannelPage, isTv: Boolean) {
             }
         }
     })
+}
+
+
+/** Подписаться / отписаться. Отписка — через подтверждение, чтобы не сделать её случайно пультом. */
+@Composable
+private fun SubscribeButton(p: ChannelPage) {
+    val ctx = LocalContext.current
+    val repo = App.instance.repo
+    val cookies by App.instance.prefs.cookiesFlow.collectAsState()
+    val loggedIn = !cookies.isNullOrBlank()
+    // null — ещё не знаем
+    var subscribed by remember(p.id, loggedIn) { mutableStateOf<Boolean?>(null) }
+    var busy by remember(p.id) { mutableStateOf(false) }
+    var confirm by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(p.id, loggedIn) {
+        if (loggedIn && p.id.isNotBlank()) subscribed = repo.isSubscribed(p.id)
+    }
+
+    fun change(to: Boolean) {
+        busy = true
+        scope.launch {
+            try {
+                repo.setSubscribed(p.id, to)
+                subscribed = to
+                Toast.makeText(ctx, if (to) "Подписался на «${p.name}»" else "Отписался от «${p.name}»", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(ctx, "Не вышло: ${e.message ?: e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    when {
+        !loggedIn -> OutlinedButton(onClick = {
+            Toast.makeText(ctx, "Чтобы подписываться, войди в аккаунт в настройках", Toast.LENGTH_LONG).show()
+        }) { Text("Подписаться") }
+        busy -> OutlinedButton(onClick = {}, enabled = false) {
+            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+        }
+        subscribed == true -> OutlinedButton(onClick = { confirm = true }) { Text("Ты подписан ✓") }
+        else -> Button(onClick = { change(true) }) { Text("Подписаться") }
+    }
+
+    if (confirm) {
+        AlertDialog(
+            onDismissRequest = { confirm = false },
+            title = { Text("Отписаться от «${p.name}»?") },
+            confirmButton = { Button(onClick = { confirm = false; change(false) }) { Text("Отписаться") } },
+            dismissButton = { TextButton(onClick = { confirm = false }) { Text("Отмена") } },
+        )
+    }
 }

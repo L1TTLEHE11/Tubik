@@ -25,6 +25,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.draw.shadow
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -51,9 +55,11 @@ class MainActivity : ComponentActivity() {
         val isTv = App.isTv(this)
         setContent {
             TubikTheme {
-                Surface(color = MaterialTheme.colorScheme.background) {
-                    MainScreen(isTv)
-                    UpdateDialogHost()
+                Scaled {
+                    Surface(color = MaterialTheme.colorScheme.background) {
+                        MainScreen(isTv)
+                        UpdateDialogHost()
+                    }
                 }
             }
         }
@@ -74,15 +80,23 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainScreen(isTv: Boolean) {
     var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
-    val selectTab: (Tab) -> Unit = { t -> Nav.clear(); tab = t }
+    // Повторный выбор текущей вкладки — обновить ленту (как в SmartTube)
+    var refresh by remember { mutableIntStateOf(0) }
+    val selectTab: (Tab) -> Unit = { t ->
+        when {
+            Nav.channels.isNotEmpty() -> { Nav.clear(); tab = t }
+            t == tab -> refresh++
+            else -> tab = t
+        }
+    }
     val content: @Composable (Modifier) -> Unit = { m ->
         Box(m) {
             val channel = Nav.channels.lastOrNull()
             if (channel != null) {
                 key(channel) { ChannelScreen(channel, isTv) }
             } else when (tab) {
-                Tab.HOME -> HomeScreen(isTv, onNeedLogin = { selectTab(Tab.SETTINGS) })
-                Tab.SUBS -> SubscriptionsScreen(isTv, onNeedLogin = { selectTab(Tab.SETTINGS) })
+                Tab.HOME -> HomeScreen(isTv, refresh, onNeedLogin = { selectTab(Tab.SETTINGS) })
+                Tab.SUBS -> SubscriptionsScreen(isTv, refresh, onNeedLogin = { selectTab(Tab.SETTINGS) })
                 Tab.SEARCH -> SearchScreen(isTv)
                 Tab.SETTINGS -> SettingsScreen(isTv)
             }
@@ -90,9 +104,9 @@ fun MainScreen(isTv: Boolean) {
     }
 
     if (isTv) {
-        Row(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize()) {
+            content(Modifier.padding(start = RAIL_COLLAPSED).fillMaxSize())
             TvRail(tab, selectTab)
-            content(Modifier.weight(1f).fillMaxHeight())
         }
     } else {
         Scaffold(
@@ -117,55 +131,88 @@ fun MainScreen(isTv: Boolean) {
     }
 }
 
+private val RAIL_COLLAPSED = 76.dp
+private val RAIL_EXPANDED = 236.dp
+
+/** Меню слева на ТВ: узкая полоска с иконками, раскрывается поверх контента, когда на него уходит фокус. */
 @Composable
 private fun TvRail(selected: Tab, onSelect: (Tab) -> Unit) {
     val firstFocus = remember { FocusRequester() }
-    Column(
-        Modifier
-            .fillMaxHeight()
-            .width(200.dp)
-            .focusRestorer(firstFocus)
-            .focusGroup()
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .padding(vertical = 28.dp, horizontal = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text(
-            "Тюбик",
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Black,
-            color = Accent,
-            modifier = Modifier.padding(start = 12.dp, bottom = 24.dp),
-        )
-        Tab.entries.forEach { t ->
-            val src = remember { MutableInteractionSource() }
-            val focused by src.collectIsFocusedAsState()
-            // На ТВ вкладка переключается, как только на неё встал фокус — без лишнего «ОК»
-            LaunchedEffect(focused) { if (focused && selected != t) onSelect(t) }
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(
-                        when {
-                            focused -> Color.White
-                            selected == t -> Accent.copy(alpha = 0.22f)
-                            else -> Color.Transparent
+    var expanded by remember { mutableStateOf(false) }
+    val width by animateDpAsState(if (expanded) RAIL_EXPANDED else RAIL_COLLAPSED, label = "rail")
+    val scrim by animateFloatAsState(if (expanded) 0.6f else 0f, label = "scrim")
+
+    Box(Modifier.fillMaxSize()) {
+        // Затемнение контента под раскрытым меню (не ловит фокус и клики)
+        if (scrim > 0f) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = scrim)))
+
+        Column(
+            Modifier
+                .fillMaxHeight()
+                .width(width)
+                .shadow(if (expanded) 16.dp else 0.dp)
+                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .onFocusChanged { expanded = it.hasFocus }
+                .focusRestorer(firstFocus)
+                .focusGroup()
+                .padding(vertical = 28.dp, horizontal = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                if (expanded) "Тюбик" else "Т",
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Black,
+                color = Accent,
+                maxLines = 1,
+                modifier = Modifier.padding(start = 14.dp, bottom = 24.dp),
+            )
+            Tab.entries.forEach { t ->
+                val src = remember { MutableInteractionSource() }
+                val focused by src.collectIsFocusedAsState()
+                // Вкладка переключается, как только на неё встал фокус; ОК на текущей — обновить ленту
+                LaunchedEffect(focused) { if (focused && selected != t) onSelect(t) }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            when {
+                                focused -> Color.White
+                                selected == t -> Accent.copy(alpha = 0.22f)
+                                else -> Color.Transparent
+                            }
+                        )
+                        .then(if (t == selected) Modifier.focusRequester(firstFocus) else Modifier)
+                        .clickable(interactionSource = src, indication = null) { onSelect(t) }
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val c = if (focused) Color.Black else MaterialTheme.colorScheme.onSurface
+                    Box {
+                        Icon(t.icon, null, tint = c)
+                        if (t == Tab.SETTINGS && Updates.hasUpdate && !expanded) {
+                            Box(Modifier.align(Alignment.TopEnd).size(8.dp).clip(RoundedCornerShape(4.dp)).background(Accent))
                         }
-                    )
-                    .then(if (t == selected) Modifier.focusRequester(firstFocus) else Modifier)
-                    .clickable(interactionSource = src, indication = null) { onSelect(t) }
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                val c = if (focused) Color.Black else MaterialTheme.colorScheme.onSurface
-                Icon(t.icon, null, tint = c)
-                Spacer(Modifier.width(14.dp))
-                Text(t.title, color = c, fontSize = 17.sp, fontWeight = if (selected == t) FontWeight.Bold else FontWeight.Normal)
-                if (t == Tab.SETTINGS && Updates.hasUpdate) {
-                    Spacer(Modifier.width(8.dp))
-                    Box(Modifier.size(8.dp).clip(RoundedCornerShape(4.dp)).background(Accent))
+                    }
+                    if (expanded) {
+                        Spacer(Modifier.width(14.dp))
+                        Text(
+                            t.title, color = c, fontSize = 17.sp, maxLines = 1,
+                            fontWeight = if (selected == t) FontWeight.Bold else FontWeight.Normal,
+                        )
+                        if (t == Tab.SETTINGS && Updates.hasUpdate) {
+                            Spacer(Modifier.width(8.dp))
+                            Box(Modifier.size(8.dp).clip(RoundedCornerShape(4.dp)).background(Accent))
+                        }
+                    }
                 }
+            }
+            if (expanded && (selected == Tab.HOME || selected == Tab.SUBS)) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "ОК на вкладке — обновить ленту", fontSize = 12.sp, maxLines = 2,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 14.dp),
+                )
             }
         }
     }

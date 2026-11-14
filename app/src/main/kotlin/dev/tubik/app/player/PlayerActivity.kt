@@ -94,7 +94,7 @@ class PlayerActivity : ComponentActivity() {
         })
 
         setContent {
-            TubikTheme {
+            TubikTheme { dev.tubik.app.ui.Scaled {
                 PlayerScreen(
                     player = player,
                     state = ui,
@@ -111,7 +111,7 @@ class PlayerActivity : ComponentActivity() {
                     },
                     onBack = { finish() },
                 )
-            }
+            } }
         }
 
         val id = intent.getStringExtra(EXTRA_ID) ?: intent.data?.toString()?.let { Repository.idFromUrl(it) }

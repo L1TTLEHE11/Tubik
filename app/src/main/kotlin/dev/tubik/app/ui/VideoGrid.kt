@@ -94,7 +94,8 @@ fun VideoGrid(
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    val grid = rememberLazyGridState()
+    // Своё состояние прокрутки на каждую ленту: после обновления — снова сверху
+    val grid = remember(feed) { androidx.compose.foundation.lazy.grid.LazyGridState() }
 
     // Догрузка, когда до конца осталось меньше 8 карточек
     val nearEnd by remember {
@@ -109,7 +110,7 @@ fun VideoGrid(
 
     LazyVerticalGrid(
         state = grid,
-        columns = GridCells.Adaptive(if (isTv) 260.dp else 300.dp),
+        columns = if (isTv) GridCells.Fixed(3) else GridCells.Adaptive(300.dp),
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(if (isTv) 28.dp else 12.dp),
         horizontalArrangement = Arrangement.spacedBy(if (isTv) 20.dp else 12.dp),
