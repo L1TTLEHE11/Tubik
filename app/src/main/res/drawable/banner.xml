@@ -1,0 +1,13 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp" android:height="180dp" android:viewportWidth="320" android:viewportHeight="180">
+    <path android:fillColor="#FF0E0E12" android:pathData="M0,0h320v180h-320z"/>
+    <path android:fillColor="#FFFF3D57" android:pathData="M28,40 L92,40 L86,116 Q60,126 34,116 Z"/>
+    <path android:fillColor="#FFFF3D57" android:pathData="M48,116 L72,116 L70,134 L50,134 Z"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M50,60 L76,77 L50,94 Z"/>
+    <!-- надпись ТЮБИК -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M112,62h36v10h-13v38h-10v-38h-13z"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M154,62h9v19h5q2,-19 15,-19q14,0 14,24q0,24 -14,24q-14,0 -15,-20h-5v20h-9zM176,86q0,15 7,15q6,0 6,-15q0,-15 -6,-15q-7,0 -7,15z"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M203,62h29v9h-20v9h8q14,0 14,15q0,15 -14,15h-17zM212,89v12h7q6,0 6,-6q0,-6 -6,-6z"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M240,62h9v29l14,-29h9v48h-9v-29l-14,29h-9z"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M280,62h9v20l13,-20h11l-15,22l16,26h-11l-11,-19l-3,4v15h-9z"/>
+</vector>

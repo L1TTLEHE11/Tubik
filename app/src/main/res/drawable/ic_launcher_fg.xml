@@ -1,0 +1,11 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- корпус тюбика -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M34,30 L74,30 L70,74 Q54,80 38,74 Z"/>
+    <!-- крышечка -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M46,74 L62,74 L61,84 L47,84 Z"/>
+    <!-- рубчик сверху -->
+    <path android:fillColor="#FFFF3D57" android:pathData="M34,30 L74,30 L73.4,35 L34.6,35 Z" android:fillAlpha="0.35"/>
+    <!-- play -->
+    <path android:fillColor="#FFFF3D57" android:pathData="M48,43 L64,53 L48,63 Z"/>
+</vector>

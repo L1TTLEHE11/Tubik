@@ -1,0 +1,13 @@
+<resources>
+    <style name="Theme.Tubik" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+    </style>
+    <style name="Theme.Tubik.Player">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
+    <color name="bg">#FF0E0E12</color>
+    <color name="accent">#FFFF3D57</color>
+</resources>
